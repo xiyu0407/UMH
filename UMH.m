@@ -40,13 +40,13 @@ if strcmp(datastr,'WiKi')
     lamda2 = 1e2;% 1e-3
     lamda1 = 1e-4;
     knum = 2100;
-    beta = 0;
+    beta = 1e-6;
 elseif strcmp(datastr,'uci')
     rho = 1e-3;%j 1e-3
     lamda2 = 10;% 1e-3
     lamda1 = 1;
     knum = 1500;
-    beta = 0; 
+    beta = 1e-6; 
 end
 T_iter = 80;% the number of iteration in the Algorithm%%
 Totaltimes = 1;
