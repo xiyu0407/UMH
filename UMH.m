@@ -1,90 +1,112 @@
 %% @author Jun Yu
-% Jiangnan University
+% Jiangnan University 
+% The code will be released by authods
 clear;
 clc;
-datastr='WiKi'; % WiKi uci
+datastr='PascalVOC'; % WiKi uci
 iskernel = 1;
 rng('default');
 rng(0) ;
 %% dataset
 if strcmp(datastr,'WiKi')==1
-    load('./Data/wikiData.mat');
-    I_tr = I_tr./ repmat(sqrt(sum(I_tr.*I_tr,2)),[1 size(I_tr,2)]);
-    I_te = I_te./ repmat(sqrt(sum(I_te.*I_te,2)),[1 size(I_te,2)]);
-    T_tr = T_tr./ repmat(sqrt(sum(T_tr.*T_tr,2)),[1 size(T_tr,2)]);
-    T_te = T_te./ repmat(sqrt(sum(T_te.*T_te,2)),[1 size(T_te,2)]);
+    load('wikiData.mat');
+    X_Train = I_tr(sampleInds,:); Y_Train =  T_tr(sampleInds,:);
+    MEANX = mean(X_Train,1); MEANY = mean(Y_Train,1); 
+    X_Train =  X_Train - MEANX;  Y_Train =  Y_Train - MEANY;
+    X_Test =  I_te - MEANX;  Y_Test =  T_te - MEANY;  
+    X_Retrieval =  I_tr - MEANX;  Y_Retrieval =  T_tr - MEANY;
 elseif strcmp(datastr,'uci')
-    load('./Data/uci.mat')
+    load('uci.mat')
+    X_Train = I_tr(sampleInds,:); Y_Train =  T_tr(sampleInds,:);
+    MEANX = mean(X_Train,1); MEANY = mean(Y_Train,1); 
+    X_Train =  X_Train - MEANX;  Y_Train =  Y_Train - MEANY;
+    X_Test =  I_te - MEANX;  Y_Test =  T_te - MEANY;  
+    X_Retrieval =  I_tr - MEANX;  Y_Retrieval =  T_tr - MEANY;
+elseif strcmp(datastr,'PascalVOC')
+    load('Pascal_voc.mat');
+    X_Train = I_tr(sampleInds,:); Y_Train =  T_tr(sampleInds,:);
+    MEANX = mean(X_Train,1); MEANY = mean(Y_Train,1); 
+    X_Train =  X_Train - MEANX;  Y_Train =  Y_Train - MEANY;
+    X_Test =  I_te - MEANX;  Y_Test =  T_te - MEANY;  
+    X_Retrieval =  I_tr - MEANX;  Y_Retrieval =  T_tr - MEANY;
 end
-X_Train = I_tr(sampleInds,:); Y_Train =  T_tr(sampleInds,:); 
-if strcmp(datastr,'WiKi')==1
-   MEANX = zeros(1,size(X_Train,2)); MEANY = zeros(1,size(Y_Train,2));  
-else
-   MEANX = mean(X_Train,1); MEANY = mean(Y_Train,1);
-end
-X_Train1 =  X_Train - MEANX;  Y_Train1 =  Y_Train - MEANY;
-clear X_Train Y_Train
-X_Test1 =  I_te - MEANX;  Y_Test1 =  T_te - MEANY;  
-X_Retrieval1 =  I_tr - MEANX;  Y_Retrieval1 =  T_tr - MEANY;
+
 if size(L_tr,2) == 1 || size(L_tr,1) == 1
     L_tr = sparse(1:length(L_tr), double(L_tr), 1); L_tr =full(L_tr);
     L_te = sparse(1:length(L_te), double(L_te), 1); L_te =full(L_te); 
 end 
 LTrain = L_tr(sampleInds,:);  LTest = L_te; LRetrieval = L_tr;
 clear I_tr T_tr I_te T_te L_tr L_te;
-% L = LTrain';
 %% initialization
-bits = [64];% the length of bits
+bits = [16 32 64 128];% the length of bits
+np = 0;
 if strcmp(datastr,'WiKi')
-    rho = 1e-2;%j 1e-3
-    lamda2 = 1e2;% 1e-3
+    rho = 1e-2;
+    lamda2 = 1e2;
     lamda1 = 1e-4;
     knum = 2100;
     beta = 1e-6;
+    eta = 0.1;
+    epsilon = 0.1;
 elseif strcmp(datastr,'uci')
-    rho = 1e-3;%j 1e-3
-    lamda2 = 10;% 1e-3
+    rho = 1e-3;
+    lamda2 = 10;
     lamda1 = 1;
     knum = 1500;
     beta = 1e-6; 
+    eta = 1e-4;
+    epsilon = 1e-3;
+elseif strcmp(datastr,'PascalVOC')
+    rho = 1e-3/2;
+    lamda2 = 10;
+    lamda1 = 1e-4;
+    knum = 2500;
+    beta = 0.1/4;
+    eta = 1; 
+    epsilon = 1e-6;
+    np = 1;
 end
 T_iter = 80;% the number of iteration in the Algorithm%%
 Totaltimes = 1;
 gamma = 0.5;
-statvalue_NLM_Non = zeros(Totaltimes,2,numel(bits));
+%%  RBF Kernel
+if iskernel==1
+    sampleType = 'random';%'random' or 'Kmeans'
+    kernelfunctiontype =0;% kernel function
+    [X_Train,Y_Train,X_Test,Y_Test,X_Retrieval,Y_Retrieval] = GET_Kernel_matrix(X_Train,Y_Train,X_Test,Y_Test,X_Retrieval,Y_Retrieval,kernelfunctiontype,knum,sampleType);
+else
+    X_Train = X_Train'; Y_Train = Y_Train';X_Test = X_Test';Y_Test = Y_Test'; X_Retrieval = X_Retrieval'; Y_Retrieval = Y_Retrieval';
+end
 %%
+Y1 = (Y_Train'./ repmat(sqrt(sum(Y_Train'.*Y_Train',2)),[1 size(Y_Train',2)]))';
+Z = Y1' * Y1;
+N = size(X_Train,2);% N is the number of Image in training set
+X = X_Train;Y = Y_Train; 
+clear X_Train Y_Train
+if exist(sprintf('./Data/%sS.mat',datastr),'file')
+    load(sprintf('./Data/%sS',datastr));
+else
+    S = getSimilarMatrix(X,ceil(0.1 * size(X,2)));
+    save(sprintf('./Data/%sS.mat',datastr),'S')
+end
+% epsilon = 0.01 * trace(-2 * S + S' * S) - 1
+%% Iteration procedure
+statvalue_NLM_Non = zeros(Totaltimes,2,numel(bits));
+history=struct('iter','objval');
+fprintf('-------start------\n');
 for runtime=1 :Totaltimes
-    %  RBF Kernel
-    if iskernel==1
-        sampleType = 'random';%'random' or 'Kmeans'
-        kernelfunctiontype =0;% kernel function
-        [X_Train,Y_Train,X_Test,Y_Test,X_Retrieval,Y_Retrieval] = GET_Kernel_matrix(X_Train1,Y_Train1,X_Test1,Y_Test1,X_Retrieval1,Y_Retrieval1,kernelfunctiontype,knum,sampleType);
-    else
-        X_Train = X_Train1'; Y_Train = Y_Train1';X_Test = X_Test1';Y_Test = Y_Test1'; X_Retrieval = X_Retrieval1'; Y_Retrieval = Y_Retrieval1';
-    end
-    Y1 = (Y_Train'./ repmat(sqrt(sum(Y_Train'.*Y_Train',2)),[1 size(Y_Train',2)]))';
-    clear X_Train1 Y_Train1 X_Test1 Y_Test1 X_Retrieval1 Y_Retrieval1
-    N = size(X_Train,2);% N is the number of Image in training set
-    X =X_Train;Y = Y_Train; 
-    if exist(sprintf('./Data/%sS.mat',datastr),'file')
-         load(sprintf('./Data/%sS',datastr));
-    else
-        S = getSimilarMatrix(X,ceil(0.1 * size(X,2)));
-        save(sprintf('./Data/%sS.mat',datastr),'S')
-    end
-    %% Iteration procedure
-    history=struct('iter','objval');
-    fprintf('-------start------\n');
     for j=1:numel(bits)
         r = bits(j); 
         P = randn(size(X,1),r);
         Q = randn(size(Y,1),r);
         B = sign(randn(N,r));
-        alpha1=0.5;alpha2=0.5;
+        alpha1 = 0.5; alpha2 = 0.5;
         for iter=1:T_iter
             % optimization of B  
             R = alpha1 ^ gamma * X' * P + alpha2 ^ gamma * Y' * Q;
-            B = sign(((-2 * S + S' * S + rho / 2 * ones(N,1) * ones(N,1)' - beta/4 * (Y1') * Y1 + 0.01 * trace(-2 * S + S' * S )* eye(N))) \ R);
+            C = S - eye(N);
+            H = (eta * (C') * C - beta * Z + rho * ones(N,1) * ones(N,1)' + (epsilon + np)* eye(N)) \ (R + epsilon * B);         
+            B = sign(H);
             % optimization of D
              itervalue_d = zeros(size(P,1),1);
              for iterd = 1 : size(P,1) 
@@ -109,21 +131,19 @@ for runtime=1 :Totaltimes
 
              value1 = alpha1 ^ gamma * (norm(X' * P - B,'fro')^2 + lamda1 * getL21norm(P));
              value2 = alpha2 ^ gamma * (norm(Y' * Q - B,'fro')^2 + lamda2 * getL21norm(Q));     
-             value3 =  norm(B - S * B,'fro') ^ 2;
+             value3 =  eta * norm(B - S * B,'fro') ^ 2;
              value4 =  rho * norm(ones(1,N) * B,'fro') ^ 2;
-             value5 = -beta/2 * norm(Y1 * B, 'fro') ^ 2;
+             value5 = -beta * trace(B' * Z * B);
              value =  value1 + value2 + value3 + value4 + value5; 
-            history.iter(iter)=iter;
-            history.objval(iter)=value;
+            history.iter(iter) = iter;
+            history.objval(iter) = value;
            fprintf('第%s次迭代: 第一项输出值：%s; 第二项输出值：%s;第三项输出值：%s;第四项输出值：%s;第五项输出值：%s;总的输出值为：%s\n',...
                num2str(iter),num2str(value1), num2str(value2), num2str(value3),num2str(value4), num2str(value5),num2str(value));
         end 
-        save('./Data/model.mat','P','Q','B','alpha1','alpha2');
-      
+%         save('./Data/model.mat','P','Q','B','alpha1','alpha2');   
       %% Convergence curve
       if r == 64
             figure('Color',[1 1 1]);
-%             subplot(1,2,1);
             Dimension = 1:1:iter;
             plot(Dimension,history.objval,'-r<','LineWidth',1,...
                                     'MarkerEdgeColor','r',...
@@ -133,16 +153,16 @@ for runtime=1 :Totaltimes
             xlabel('iteration number');
       end
         %% evaluation    
-        I_tr=defsign(X_Retrieval' * P); 
-        I_te=defsign(X_Test' * P);
-        T_tr=defsign(Y_Retrieval' * Q);
-        T_te=defsign(Y_Test' * Q);
+        I_tr = defsign(X_Retrieval' * P); 
+        I_te = defsign(X_Test' * P);
+        T_tr = defsign(Y_Retrieval' * Q);
+        T_te = defsign(Y_Test' * Q);
 
-        I_tr=compactbit((I_tr>=0));
-        I_te=compactbit((I_te>=0));
-        T_tr=compactbit((T_tr>=0));
-        T_te=compactbit((T_te>=0)); 
-%         fprintf('%s-bit的输出：%d\n',num2str(r));
+        I_tr = compactbit((I_tr>=0));
+        I_te = compactbit((I_te>=0));
+        T_tr = compactbit((T_tr>=0));
+        T_te = compactbit((T_te>=0)); 
+
         hammingM = hammingDist(I_te, T_tr)';
         MAP_I2T= perf_metric4Label( LRetrieval,LTest, hammingM );   
         fprintf('I2T_MAP值为：%s\n',MAP_I2T);
@@ -153,13 +173,11 @@ for runtime=1 :Totaltimes
         statvalue_NLM_Non(runtime,2,j) = MAP_T2I;
     end
 end
-%%
-% fprintf('16-bit-I2T：%s\n',num2str(mean(statvalue_NLM_Non(:,1,1))));
-% fprintf('16-bit-T2I：%s\n',num2str(mean(statvalue_NLM_Non(:,2,1))));
-% fprintf('32-bit-I2T：%s\n',num2str(mean(statvalue_NLM_Non(:,1,2))));
-% fprintf('32-bit-T2I：%s\n',num2str(mean(statvalue_NLM_Non(:,2,2))));
-% fprintf('64-bit-I2T：%s\n',num2str(mean(statvalue_NLM_Non(:,1,3))));
-% fprintf('64-bit-T2I：%s\n',num2str(mean(statvalue_NLM_Non(:,2,3))));
-% fprintf('128-bit-I2T：%s\n',num2str(mean(statvalue_NLM_Non(:,1,4))));
-% fprintf('128-bit-T2I：%s\n',num2str(mean(statvalue_NLM_Non(:,2,4))));
-
+fprintf('16-bit-I2T：%s\n',num2str(mean(statvalue_NLM_Non(:,1,1))));
+fprintf('16-bit-T2I：%s\n',num2str(mean(statvalue_NLM_Non(:,2,1))));
+fprintf('32-bit-I2T：%s\n',num2str(mean(statvalue_NLM_Non(:,1,2))));
+fprintf('32-bit-T2I：%s\n',num2str(mean(statvalue_NLM_Non(:,2,2))));
+fprintf('64-bit-I2T：%s\n',num2str(mean(statvalue_NLM_Non(:,1,3))));
+fprintf('64-bit-T2I：%s\n',num2str(mean(statvalue_NLM_Non(:,2,3))));
+fprintf('128-bit-I2T：%s\n',num2str(mean(statvalue_NLM_Non(:,1,4))));
+fprintf('128-bit-T2I：%s\n',num2str(mean(statvalue_NLM_Non(:,2,4))));
