@@ -1,2 +1,2 @@
 # UMH
-Unsupervised Multimodal Hashing for Cross-modal retrieval
+Unsupervised Multi-modal Hashing for Cross-modal retrieval
